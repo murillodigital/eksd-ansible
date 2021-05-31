@@ -1,0 +1,119 @@
+---
+- name: Prepare hosts for kubeadm eksd install
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Disable SELinux immediately
+      shell: setenforce 0 || exit 0
+
+    - name: Disable swap immediately
+      shell: swapoff -a
+
+    - name: Remove all swap mount points
+      replace:
+        path: /etc/fstab
+        regexp: '^(\s*)([^#\n]+\s+)(\w+\s+)swap(\s+.*)$'
+        replace: '#\1\2\3swap\4'
+        backup: yes
+
+    - name: Remove docker yum repository
+      yum_repository:
+        name: docker-ce
+        description: Docker Community Repo
+        baseurl: https://download.docker.com/linux/centos/docker-ce.repo
+        state: absent
+
+    - name: Install docker yum repository
+      yum_repository:
+        name: docker-ce-stable
+        description: Docker CE Stable - $basearch
+        baseurl: https://download.docker.com/linux/centos/$releasever/$basearch/stable
+        gpgkey:
+          - https://download.docker.com/linux/centos/gpg
+
+    - name: Install Google Kubernetes yum repository
+      yum_repository:
+        name: kubernetes
+        description: Google Kubernetes Repo
+        baseurl: https://packages.cloud.google.com/yum/repos/kubernetes-el7-$basearch
+        gpgkey:
+          - https://packages.cloud.google.com/yum/doc/yum-key.gpg
+          - https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+        exclude:
+          - kubelet
+          - kubeadm
+          - kubectl
+
+    - name: Install epel-release repo
+      yum:
+        name: epel-release
+
+    - name: Install all required packages
+      yum:
+        name:
+          - socat
+          - conntrack-tools
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - kubelet
+          - kubeadm
+          - kubectl
+          - python-pip
+        disable_excludes: kubernetes
+
+    - name: Remove previously installed binaries that we need to replace with EKSD specifics
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - "/usr/bin/kubelet"
+        - "/usr/bin/kubeadm"
+        - "/usr/bin/kubectl"
+
+    - name: Replace yum installed binaries with EKS specific binaries
+      get_url:
+        url: "{{ item.url }}"
+        dest: "/usr/bin/{{ item.filename }}"
+        mode: "0770"
+      with_items:
+        - { url: "https://distro.eks.amazonaws.com/kubernetes-1-19/releases/4/artifacts/kubernetes/v1.19.8/bin/linux/amd64/kubelet" , filename: "kubelet" }
+        - { url: "https://distro.eks.amazonaws.com/kubernetes-1-19/releases/4/artifacts/kubernetes/v1.19.8/bin/linux/amd64/kubeadm" , filename: "kubeadm" }
+        - { url: "https://distro.eks.amazonaws.com/kubernetes-1-19/releases/4/artifacts/kubernetes/v1.19.8/bin/linux/amd64/kubectl" , filename: "kubectl" }
+
+    - name: Create directory for kubelet config
+      file:
+        path: /var/lib/kubelet
+        state: directory
+
+    - name: Copy kubeadm flags
+      copy:
+        src: ./templates/kubeadm-flags.env
+        dest: /var/lib/kubelet/kubeadm-flags.env
+        owner: root
+        group: root
+        mode: '0640'
+
+    - name: Enable kubelet service
+      systemd:
+        state: started
+        enabled: yes
+        name: kubelet
+
+    - name: Enable docker service
+      systemd:
+        state: started
+        enabled: yes
+        name: docker
+
+    - name: Pull all images
+      shell: |
+        docker pull public.ecr.aws/eks-distro/kubernetes/pause:v1.19.8-eks-1-19-4
+        docker pull public.ecr.aws/eks-distro/coredns/coredns:v1.8.0-eks-1-19-4
+        docker pull public.ecr.aws/eks-distro/etcd-io/etcd:v3.4.14-eks-1-19-4
+        docker tag public.ecr.aws/eks-distro/kubernetes/pause:v1.19.8-eks-1-19-4 public.ecr.aws/eks-distro/kubernetes/pause:3.2
+        docker tag public.ecr.aws/eks-distro/coredns/coredns:v1.8.0-eks-1-19-4 public.ecr.aws/eks-distro/kubernetes/coredns:1.7.0
+        docker tag public.ecr.aws/eks-distro/etcd-io/etcd:v3.4.14-eks-1-19-4 public.ecr.aws/eks-distro/kubernetes/etcd:3.4.13-0
+      tags:
+        - pull_image
+
