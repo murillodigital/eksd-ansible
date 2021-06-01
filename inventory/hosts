@@ -2,7 +2,13 @@
 ansible_user=root
 ansible_connection=ssh
 
-[all]
-147.75.79.233
-147.75.38.109
-147.75.38.117
+[all:children]
+master
+worker
+
+[master]
+147.75.79.233 role=master
+
+[worker]
+147.75.38.109 role=worker
+147.75.38.117 role=worker
