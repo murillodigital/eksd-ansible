@@ -1,0 +1,177 @@
+---
+- name: Configure kubernetes nodes
+  hosts: master, worker
+  gather_facts: true
+  tasks:
+    - name: Disable SELinux immediately
+      shell: setenforce 0 || exit 0
+
+    - name: Disable swap immediately
+      shell: swapoff -a
+
+    - name: Remove all swap mount points
+      replace:
+        path: /etc/fstab
+        regexp: '^(\s*)([^#\n]+\s+)(\w+\s+)swap(\s+.*)$'
+        replace: '#\1\2\3swap\4'
+        backup: yes
+
+    - name: Install docker yum repository
+      yum_repository:
+        name: docker-ce-stable
+        description: Docker CE Stable - $basearch
+        baseurl: https://download.docker.com/linux/centos/$releasever/$basearch/stable
+        gpgkey:
+          - https://download.docker.com/linux/centos/gpg
+
+    - name: Install Google Kubernetes yum repository
+      yum_repository:
+        name: kubernetes
+        description: Google Kubernetes Repo
+        baseurl: https://packages.cloud.google.com/yum/repos/kubernetes-el7-$basearch
+        gpgkey:
+          - https://packages.cloud.google.com/yum/doc/yum-key.gpg
+          - https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+        exclude:
+          - kubelet
+          - kubeadm
+          - kubectl
+
+    - name: Install epel-release repo
+      yum:
+        name: epel-release
+
+    - name: Install all required packages
+      yum:
+        name:
+          - socat
+          - conntrack-tools
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - kubelet
+          - kubeadm
+          - kubectl
+          - python3-pip
+          - lvm2
+        disable_excludes: kubernetes
+
+    - name: Remove previously installed binaries that we need to replace with EKSD specifics
+      file:
+        path: "{{ item }}"
+        state: absent
+      with_items:
+        - "/usr/bin/kubelet"
+        - "/usr/bin/kubeadm"
+        - "/usr/bin/kubectl"
+
+    - name: Replace yum installed binaries with EKS specific binaries
+      get_url:
+        url: "{{ item.url }}"
+        dest: "/usr/bin/{{ item.filename }}"
+        mode: "0770"
+      with_items:
+        - { url: "https://distro.eks.amazonaws.com/kubernetes-1-19/releases/4/artifacts/kubernetes/v1.19.8/bin/linux/amd64/kubelet" , filename: "kubelet" }
+        - { url: "https://distro.eks.amazonaws.com/kubernetes-1-19/releases/4/artifacts/kubernetes/v1.19.8/bin/linux/amd64/kubeadm" , filename: "kubeadm" }
+        - { url: "https://distro.eks.amazonaws.com/kubernetes-1-19/releases/4/artifacts/kubernetes/v1.19.8/bin/linux/amd64/kubectl" , filename: "kubectl" }
+
+    - name: Create directory for kubelet config
+      file:
+        path: /var/lib/kubelet
+        state: directory
+
+    - name: Copy kubeadm flags
+      copy:
+        src: ./templates/kubeadm-flags.env
+        dest: /var/lib/kubelet/kubeadm-flags.env
+        owner: root
+        group: root
+        mode: '0640'
+
+    - name: Enable kubelet service
+      systemd:
+        state: started
+        enabled: yes
+        name: kubelet
+
+    - name: Enable docker service
+      systemd:
+        state: started
+        enabled: yes
+        name: docker
+
+    - name: Pull all images for master node
+      shell: |
+        docker pull public.ecr.aws/eks-distro/kubernetes/pause:v1.19.8-eks-1-19-4
+        docker pull public.ecr.aws/eks-distro/coredns/coredns:v1.8.0-eks-1-19-4
+        docker pull public.ecr.aws/eks-distro/etcd-io/etcd:v3.4.14-eks-1-19-4
+        docker tag public.ecr.aws/eks-distro/kubernetes/pause:v1.19.8-eks-1-19-4 public.ecr.aws/eks-distro/kubernetes/pause:3.2
+        docker tag public.ecr.aws/eks-distro/coredns/coredns:v1.8.0-eks-1-19-4 public.ecr.aws/eks-distro/kubernetes/coredns:1.7.0
+        docker tag public.ecr.aws/eks-distro/etcd-io/etcd:v3.4.14-eks-1-19-4 public.ecr.aws/eks-distro/kubernetes/etcd:3.4.13-0
+      tags:
+        - pull_image
+
+    - name: Place other required files
+      copy:
+        src: "{{ item.src_file }}"
+        dest: "{{ item.dest_file }}"
+        owner: root
+        group: root
+        mode: '0644'
+      with_items:
+        - { src_file: "./templates/99-k8s.conf", dest_file: "/etc/sysctl.d/99-k8s.conf" }
+        - { src_file: "./templates/k8s.conf", dest_file: "/etc/modules-load.d/k8s.conf" }
+
+    - name: Run kubeadm on master node
+      shell: |
+        kubeadm init --image-repository public.ecr.aws/eks-distro/kubernetes --kubernetes-version v1.19.8-eks-1-19-4 --control-plane-endpoint "{{ hostvars[groups['loadbalancer'][0]]['inventory_hostname'] }}:6443" --upload-certs > /tmp/kubeadm.output
+      when: inventory_hostname == hostvars[groups['master'][0]]['inventory_hostname'] and role == "master"
+      args:
+        creates: "/etc/kubernetes/kubelet.conf"
+
+    # This is possibly the worst way to get the master node join command, but it will have to do for now...
+    - name: Get join command for the other master nodes
+      shell: |
+        cat /tmp/kubeadm.output | grep -A 5 'join any number of the control-plane' | sed "1 d" | grep "\S"
+      register: master_join_command
+      when: inventory_hostname == hostvars[groups['master'][0]]['inventory_hostname'] and role == "master"
+      tags:
+        - master_join
+
+    - name: Make directory for kubectl config
+      file:
+        path: "/root/.kube"
+        state: directory
+      when: inventory_hostname == hostvars[groups['master'][0]]['inventory_hostname'] and role == "master"
+
+    - name: Copy kubectl config file for root
+      copy:
+        remote_src: yes
+        src: "/etc/kubernetes/admin.conf"
+        dest: "/root/.kube/config"
+        owner: "root"
+        group: "root"
+      when: inventory_hostname == hostvars[groups['master'][0]]['inventory_hostname'] and role == "master"
+
+    - name: Deploy CNI to cluster
+      shell: kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=v1.19.8-eks-1-19-4&env.IPALLOC_RANGE=192.168.0.0/16"
+      when: inventory_hostname == hostvars[groups['master'][0]]['inventory_hostname'] and role == "master"
+
+    - name: Join the rest of the nodes
+      shell: "{{ hostvars[groups['master'][0]].master_join_command.stdout }}"
+      when: inventory_hostname != hostvars[groups['master'][0]]['inventory_hostname'] and role == "master"
+
+    - name: Get join command for worker nodes
+      shell: kubeadm token create --print-join-command 2> /dev/null
+      register: worker_join_command
+      when: inventory_hostname == hostvars[groups['master'][0]]['inventory_hostname'] and role == "master"
+
+    - name: Pull images for worker nodes
+      shell: |
+        docker pull public.ecr.aws/eks-distro/kubernetes/pause:v1.19.8-eks-1-19-4
+        docker tag public.ecr.aws/eks-distro/kubernetes/pause:v1.19.8-eks-1-19-4 public.ecr.aws/eks-distro/kubernetes/pause:3.2
+      when: role == "worker"
+
+    - name: Join worker nodes to control plane
+      shell: "{{ hostvars[groups['master'][0]].worker_join_command.stdout }}"
+      when: role == "worker"

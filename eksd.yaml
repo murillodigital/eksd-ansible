@@ -60,6 +60,7 @@
           - kubeadm
           - kubectl
           - python-pip
+          - lvm2
         disable_excludes: kubernetes
 
     - name: Remove previously installed binaries that we need to replace with EKSD specifics

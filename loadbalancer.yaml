@@ -1,0 +1,33 @@
+---
+- name: Install Load Balancer
+  hosts: loadbalancer
+  gather_facts: true
+
+  tasks:
+    - name: Install NGINX dnf package
+      dnf:
+        name: nginx
+        state: latest
+
+    - name: Replace nginx config to load additional config files outside of http scope
+      template:
+        src: templates/loadbalancer/nginx.conf
+        dest: /etc/nginx/nginx.conf
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Create load balancer configuration file
+      template:
+        src: templates/loadbalancer/10-loadbalancer.conf
+        dest: /etc/nginx/conf.d/10-loadbalancer.conf
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Enable and start NGINX server
+      systemd:
+        name: nginx
+        enabled: yes
+        state: started
+

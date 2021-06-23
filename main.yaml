@@ -1,0 +1,6 @@
+---
+- name: Deploy NGINX Load Balancer for master nodes
+  import_playbook: loadbalancer.yaml
+
+- name: Configures EKSD Cluster
+  import_playbook: cluster.yaml
