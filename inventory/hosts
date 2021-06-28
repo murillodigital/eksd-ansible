@@ -8,14 +8,14 @@ worker
 loadbalancer
 
 [master]
-147.75.194.145 role=master
-147.75.194.61 role=master
-147.75.98.175 role=master
+147.75.198.25 role=master
+147.75.78.123 role=master
+147.75.199.239 role=master
 
 [worker]
-147.75.44.183 role=worker
-147.75.194.185 role=worker
-147.75.44.217 role=worker
+147.75.38.115 role=worker
+147.75.105.109 role=worker
+147.75.105.111 role=worker
 
 [loadbalancer]
-145.40.78.171 role=loadbalancer
+147.75.98.175 role=loadbalancer

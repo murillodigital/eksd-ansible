@@ -71,9 +71,9 @@
         dest: "/usr/bin/{{ item.filename }}"
         mode: "0770"
       with_items:
-        - { url: "https://distro.eks.amazonaws.com/kubernetes-1-19/releases/4/artifacts/kubernetes/v1.19.8/bin/linux/amd64/kubelet" , filename: "kubelet" }
-        - { url: "https://distro.eks.amazonaws.com/kubernetes-1-19/releases/4/artifacts/kubernetes/v1.19.8/bin/linux/amd64/kubeadm" , filename: "kubeadm" }
-        - { url: "https://distro.eks.amazonaws.com/kubernetes-1-19/releases/4/artifacts/kubernetes/v1.19.8/bin/linux/amd64/kubectl" , filename: "kubectl" }
+        - { url: "https://distro.eks.amazonaws.com/kubernetes-1-20/releases/1/artifacts/kubernetes/v1.20.4/bin/linux/amd64/kubelet" , filename: "kubelet" }
+        - { url: "https://distro.eks.amazonaws.com/kubernetes-1-20/releases/1/artifacts/kubernetes/v1.20.4/bin/linux/amd64/kubeadm" , filename: "kubeadm" }
+        - { url: "https://distro.eks.amazonaws.com/kubernetes-1-20/releases/1/artifacts/kubernetes/v1.20.4/bin/linux/amd64/kubectl" , filename: "kubectl" }
 
     - name: Create directory for kubelet config
       file:
@@ -100,17 +100,6 @@
         enabled: yes
         name: docker
 
-    - name: Pull all images for master node
-      shell: |
-        docker pull public.ecr.aws/eks-distro/kubernetes/pause:v1.19.8-eks-1-19-4
-        docker pull public.ecr.aws/eks-distro/coredns/coredns:v1.8.0-eks-1-19-4
-        docker pull public.ecr.aws/eks-distro/etcd-io/etcd:v3.4.14-eks-1-19-4
-        docker tag public.ecr.aws/eks-distro/kubernetes/pause:v1.19.8-eks-1-19-4 public.ecr.aws/eks-distro/kubernetes/pause:3.2
-        docker tag public.ecr.aws/eks-distro/coredns/coredns:v1.8.0-eks-1-19-4 public.ecr.aws/eks-distro/kubernetes/coredns:1.7.0
-        docker tag public.ecr.aws/eks-distro/etcd-io/etcd:v3.4.14-eks-1-19-4 public.ecr.aws/eks-distro/kubernetes/etcd:3.4.13-0
-      tags:
-        - pull_image
-
     - name: Place other required files
       copy:
         src: "{{ item.src_file }}"
@@ -122,9 +111,17 @@
         - { src_file: "./templates/99-k8s.conf", dest_file: "/etc/sysctl.d/99-k8s.conf" }
         - { src_file: "./templates/k8s.conf", dest_file: "/etc/modules-load.d/k8s.conf" }
 
+    - name: Place kubeadm config file
+      template:
+        src: "./templates/master/kubeadm.yaml"
+        dest: "/tmp/kubeadm.yaml"
+        owner: root
+        group: root
+        mode: '0644'
+
     - name: Run kubeadm on master node
       shell: |
-        kubeadm init --image-repository public.ecr.aws/eks-distro/kubernetes --kubernetes-version v1.19.8-eks-1-19-4 --control-plane-endpoint "{{ hostvars[groups['loadbalancer'][0]]['inventory_hostname'] }}:6443" --upload-certs > /tmp/kubeadm.output
+        kubeadm init --config /tmp/kubeadm.yaml --upload-certs > /tmp/kubeadm.output
       when: inventory_hostname == hostvars[groups['master'][0]]['inventory_hostname'] and role == "master"
       args:
         creates: "/etc/kubernetes/kubelet.conf"
@@ -154,7 +151,7 @@
       when: inventory_hostname == hostvars[groups['master'][0]]['inventory_hostname'] and role == "master"
 
     - name: Deploy CNI to cluster
-      shell: kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=v1.19.8-eks-1-19-4&env.IPALLOC_RANGE=192.168.0.0/16"
+      shell: kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=v1.20.4-eks-1-20-1&env.IPALLOC_RANGE=192.168.0.0/16"
       when: inventory_hostname == hostvars[groups['master'][0]]['inventory_hostname'] and role == "master"
 
     - name: Join the rest of the nodes
@@ -165,12 +162,6 @@
       shell: kubeadm token create --print-join-command 2> /dev/null
       register: worker_join_command
       when: inventory_hostname == hostvars[groups['master'][0]]['inventory_hostname'] and role == "master"
-
-    - name: Pull images for worker nodes
-      shell: |
-        docker pull public.ecr.aws/eks-distro/kubernetes/pause:v1.19.8-eks-1-19-4
-        docker tag public.ecr.aws/eks-distro/kubernetes/pause:v1.19.8-eks-1-19-4 public.ecr.aws/eks-distro/kubernetes/pause:3.2
-      when: role == "worker"
 
     - name: Join worker nodes to control plane
       shell: "{{ hostvars[groups['master'][0]].worker_join_command.stdout }}"
