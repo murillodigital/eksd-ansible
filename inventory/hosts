@@ -5,10 +5,17 @@ ansible_connection=ssh
 [all:children]
 master
 worker
+loadbalancer
 
 [master]
-147.75.79.233 role=master
+147.75.78.123 role=master
+139.178.64.33 role=master
+147.75.38.115 role=master
 
 [worker]
-147.75.38.109 role=worker
-147.75.38.117 role=worker
+147.75.194.185 role=worker
+147.75.198.25 role=worker
+147.75.194.203 role=worker
+
+[loadbalancer]
+139.178.64.99 role=loadbalancer
