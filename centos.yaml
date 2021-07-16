@@ -1,0 +1,6 @@
+---
+- name: Deploy NGINX Load Balancer for master nodes
+  import_playbook: ./playbooks/centos/loadbalancer.yaml
+
+- name: Configure EKSD Clustereksd.yaml
+  import_playbook: ./playbooks/centos/eksd.yaml

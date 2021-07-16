@@ -18,7 +18,7 @@
 
     - name: Replace nginx config to load additional config files outside of http scope
       template:
-        src: templates/loadbalancer/nginx.conf
+        src: ../../templates/centos/loadbalancer/nginx.conf
         dest: /etc/nginx/nginx.conf
         owner: root
         group: root
@@ -26,7 +26,7 @@
 
     - name: Create load balancer configuration file
       template:
-        src: templates/loadbalancer/10-loadbalancer.conf
+        src: ../../templates/centos/loadbalancer/10-loadbalancer.conf
         dest: /etc/nginx/conf.d/10-loadbalancer.conf
         owner: root
         group: root

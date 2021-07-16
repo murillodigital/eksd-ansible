@@ -88,7 +88,7 @@
 
     - name: Copy kubeadm flags
       copy:
-        src: ./templates/kubeadm-flags.env
+        src: ../../templates/general/kubeadm-flags.env
         dest: /var/lib/kubelet/kubeadm-flags.env
         owner: root
         group: root
@@ -127,8 +127,8 @@
         group: root
         mode: '0644'
       with_items:
-        - { src_file: "./templates/99-k8s.conf", dest_file: "/etc/sysctl.d/99-k8s.conf" }
-        - { src_file: "./templates/k8s.conf", dest_file: "/etc/modules-load.d/k8s.conf" }
+        - { src_file: "../../templates/general/99-k8s.conf", dest_file: "/etc/sysctl.d/99-k8s.conf" }
+        - { src_file: "../../templates/general/k8s.conf", dest_file: "/etc/modules-load.d/k8s.conf" }
       when: role == "master"
 
     - name: Run kubeadm on master node
