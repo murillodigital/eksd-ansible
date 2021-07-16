@@ -1,0 +1,26 @@
+---
+- name: Install Load Balancer
+  hosts: loadbalancer
+  gather_facts: true
+
+  tasks:
+    - name: Install nginx
+      apt:
+        name:
+          - nginx
+          - libnginx-mod-stream
+
+    - name: Create load balancer configuration file
+      template:
+        src: templates/ubuntu/loadbalancer/99-loadbalancer.conf
+        dest: /etc/nginx/modules-enabled/99-loadbalancer.conf
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Enable and start NGINX server
+      systemd:
+        name: nginx
+        enabled: yes
+        state: restarted
+
