@@ -4,6 +4,11 @@
   gather_facts: true
 
   tasks:
+    - name: Update and upgrade apt packages
+      apt:
+        upgrade: yes
+        update_cache: yes
+        cache_valid_time: 86400
     - name: Install nginx
       apt:
         name:
@@ -12,7 +17,7 @@
 
     - name: Create load balancer configuration file
       template:
-        src: templates/ubuntu/loadbalancer/99-loadbalancer.conf
+        src: ../../templates/ubuntu/loadbalancer/99-loadbalancer.conf
         dest: /etc/nginx/modules-enabled/99-loadbalancer.conf
         owner: root
         group: root
@@ -23,4 +28,3 @@
         name: nginx
         enabled: yes
         state: restarted
-
